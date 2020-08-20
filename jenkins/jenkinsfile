@@ -1,0 +1,44 @@
+// Defining application name 
+      def appName="amol-common-utils"
+
+// Template for  maven slave with mvn-3.6.3 and java 11 image 
+podTemplate(label: "$appName-pod", 
+             cloud: "openshift", 
+             inheritFrom: "maven",
+             containers: [
+                containerTemplate(name: "jnlp", 
+                       image: "docker-registry.default.svc:5000/amol-devops/jenkins-maven-agent-custom-jdk11-mvn3.6.3:test1", 
+                       resourceRequestMemory: "512Mi", 
+                       resourceLimitMemory: "512Mi", 
+                       envVars: [
+                envVar(key: "CONTAINER_HEAP_PERCENT", value: "0.25"),
+                envVar(key: "GIT_SSL_NO_VERIFY", value: "true"), // will be removed as we will use ssh programmatic access to git repo 
+		
+    ])
+]){
+
+//starting agent node 
+  node("$appName-pod") {
+  
+//git checkout on slave node              
+            stage("Checkout") {
+                             git branch: 'feature/amol-common-utils-updt-parent-pom', credentialsId: 'rathohit', url: 'https://ab011pe@bitbucket-agl.absa.co.za/scm/amap/amol-common-utils.git'
+                       }
+// mvn configuration stage creating custom truststore and importing Nexus and SonarQube certificates
+            stage("Maven Configuration")	{
+			    sh '''	    mkdir ~/.m2
+        					cp  ./source_dir/configuration/settings.xml ~/.m2/settings.xml                                                   
+		           '''			
+            }		 
+            
+     
+// deploying artifacts on nexus repo				  
+      	        stage("Uploading Artifacts to nexus") {
+                           withCredentials([usernamePassword(credentialsId: 'rathohit', passwordVariable: 'PASS', usernameVariable: 'USR')]) {
+                           sh '''mvn -Djavax.net.ssl.trustStore=./certs/.cacerts/cacerts -DaltDeploymentRepository=aro::default::https://nexus-agl.absa.co.za/repository/ARO/ -DUSR="$USR" -DPWD="$PASS" -e deploy -Pjdk11,!wildfly-home,!wildfly-start-or-download,!wildfly-jpa,!wildfly,!fuse,!galleon-resources,!galleon,!openshift,!jax-ws,!deltaspike-data'''
+                    } 
+                  }       
+                }
+              }
+         
+
